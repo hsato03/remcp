@@ -10,16 +10,21 @@
 #define PORT 9734
 #define BUFFER_SIZE 768
 #define CHUNK_SIZE 128
+#define PATH_MAX_SIZE 4096
+
+struct file_copy_info {
+    char path[PATH_MAX_SIZE];
+    long size;
+};
 
 int main() {
     int server_sockfd, client_sockfd;
     int server_len, client_len;
     struct sockaddr_in server_address;
     struct sockaddr_in client_address;
-    char file_name[BUFFER_SIZE];
+    struct file_copy_info file_info;
     char file_chunks[BUFFER_SIZE];
     FILE* file;
-    long file_size;
 
     server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
     server_address.sin_family = AF_INET;
@@ -31,21 +36,24 @@ int main() {
     listen(server_sockfd, 5);
 
     // TODO: continuar a transferencia de um arquivo ja existente
-    while(1) {		
+    while(1) {
         printf("server waiting\n");
         client_len = sizeof(client_address);
         client_sockfd = accept(server_sockfd,(struct sockaddr *)&client_address, &client_len);
-        read(client_sockfd, &file_name, BUFFER_SIZE);
-        printf("file name: %s\n", file_name);
+        
+        read(client_sockfd, &file_info, sizeof(file_info));
+        printf("file name: %s\n", file_info.path);
+        printf("file size: %ld\n", file_info.size);
 
-        file = fopen(file_name, "r+");
+        long file_size;
+        file = fopen(file_info.path, "r+");
         if (file) {
-            printf("OPENED");
+            printf("OPENED\n");
             fseek(file, 0, SEEK_END);
             file_size = ftell(file);
         } else {
-            printf("CREATED");
-            file = fopen(file_name, "w");
+            printf("CREATED\n");
+            file = fopen(file_info.path, "w+");
             if (file == NULL) {
                 perror("Erro ao criar o arquivo.");
                 close(client_sockfd);
@@ -53,9 +61,12 @@ int main() {
             }       
         }
 
+        write(client_sockfd, &file_size, sizeof(file_size));
+
         ssize_t bytes_received;
         size_t buffer_offset = 0;
         char write_buffer[CHUNK_SIZE];
+        long total_bytes_write = file_size;
         while ((bytes_received = read(client_sockfd, file_chunks, BUFFER_SIZE)) > 0) {
             for (size_t i = 0; i < bytes_received; i++) {
                 write_buffer[buffer_offset++] = file_chunks[i];
@@ -66,6 +77,7 @@ int main() {
                         break;
                     }
                     buffer_offset = 0;
+                    total_bytes_write += CHUNK_SIZE;
                 }
             }
         }
@@ -74,12 +86,16 @@ int main() {
             if (fwrite(write_buffer, 1, buffer_offset, file) != buffer_offset) {
                 perror("Erro ao escrever o restante no arquivo");
             }
+            total_bytes_write += buffer_offset;
         }
 
-        char new_file_name[BUFFER_SIZE];
-        strcpy(new_file_name, file_name);
-        new_file_name[strlen(new_file_name)-5] = '\0';
-        rename(file_name, new_file_name);
+        if (total_bytes_write == file_info.size) {
+            printf("RENOMEANDO");
+            char new_file_name[BUFFER_SIZE];
+            strcpy(new_file_name, file_info.path);
+            new_file_name[strlen(new_file_name)-5] = '\0';
+            rename(file_info.path, new_file_name);
+        }
 
         fclose(file);
         close(client_sockfd);

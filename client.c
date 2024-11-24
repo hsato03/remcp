@@ -8,7 +8,13 @@
 #include <string.h>
 
 #define BUFFER_SIZE 768
+#define PATH_MAX_SIZE 4096
 #define PORT 9734
+
+struct file_copy_info {
+    char path[PATH_MAX_SIZE];
+    long size;
+};
 
 int main(int argc, char **argv) {
     if (argc < 3) {
@@ -24,6 +30,10 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
+    fseek(file, 0, SEEK_END);
+    long client_file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
     char *destination = argv[2];
     char *destination_ip;
     char *destination_path;
@@ -37,12 +47,16 @@ int main(int argc, char **argv) {
     strcat(destination_path, file_name);
     strcat(destination_path, ".part");
 
+    struct file_copy_info file_info;
+    strncpy(file_info.path, destination_path, sizeof(file_info.path) - 1);
+    file_info.size = client_file_size;
+
     printf("IP de destino: %s\n", destination_ip);
-    printf("Caminho de destino: %s\n", destination_path);
+    printf("Caminho de destino: %s\n", file_info.path);
+    printf("TAMANHO ARQUIVO CLIENTE: %ld \n", file_info.size);
 
     int sockfd;
     struct sockaddr_in address;
-    int result;
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     address.sin_family = AF_INET;
@@ -54,11 +68,20 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    if (write(sockfd, destination_path, strlen(destination_path) + 1) == -1) {
-        perror("Erro ao enviar o nome do arquivo.");
+    if (write(sockfd, &file_info, sizeof(file_info)) == -1) {
+        perror("Erro ao enviar as informações do arquivo.");
         fclose(file);
         close(sockfd);
         exit(1);
+    }
+
+    long server_file_size;
+    read(sockfd, &server_file_size, sizeof(server_file_size));
+    printf("TAMANHO ARQUIVO SERVIDOR: %ld \n", server_file_size);
+
+    if (server_file_size > 0) {
+        printf("OFFSET: %ld \n", server_file_size);
+        fseek(file, server_file_size, SEEK_SET);
     }
 
     char buffer[BUFFER_SIZE];
