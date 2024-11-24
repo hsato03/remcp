@@ -32,7 +32,6 @@ int main(int argc, char **argv) {
 
     fseek(file, 0, SEEK_END);
     long client_file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
 
     char *destination = argv[2];
     char *destination_ip;
@@ -79,10 +78,7 @@ int main(int argc, char **argv) {
     read(sockfd, &server_file_size, sizeof(server_file_size));
     printf("TAMANHO ARQUIVO SERVIDOR: %ld \n", server_file_size);
 
-    if (server_file_size > 0) {
-        printf("OFFSET: %ld \n", server_file_size);
-        fseek(file, server_file_size, SEEK_SET);
-    }
+    fseek(file, server_file_size, SEEK_SET);
 
     char buffer[BUFFER_SIZE];
     size_t bytes_read;

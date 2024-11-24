@@ -58,7 +58,8 @@ int main() {
                 perror("Erro ao criar o arquivo.");
                 close(client_sockfd);
                 continue;
-            }       
+            }
+            file_size = 0;
         }
 
         write(client_sockfd, &file_size, sizeof(file_size));
