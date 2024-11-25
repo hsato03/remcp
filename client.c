@@ -6,22 +6,29 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include "common.h"
+#include "client.h"
 
-#define BUFFER_SIZE 768
-#define PATH_MAX_SIZE 4096
-#define PORT 9734
+int sockfd;
+struct sockaddr_in address;
 
-struct file_copy_info {
-    char path[PATH_MAX_SIZE];
-    long size;
-};
+void create_socket(char *server_ip) {
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = inet_addr(server_ip);
+    address.sin_port = htons(PORT);
+}
 
-int main(int argc, char **argv) {
-    if (argc < 3) {
+void validate_input(int parameters_size) {
+    if (parameters_size < 3) {
         printf("É necessário passar 2 parametros: o arquivo que será copiado e o destino.\n");
         printf("Exemplo: ./remcp meu_arquivo.txt 192.168.0.5:/home/usuario/teste\n");
         exit(1);
     }
+}
+
+int main(int argc, char **argv) {
+    validate_input(argc);
 
     char *file_name = argv[1];
     FILE *file = fopen(file_name, "r");
@@ -30,8 +37,7 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    fseek(file, 0, SEEK_END);
-    long client_file_size = ftell(file);
+    long client_file_size = get_file_size_in_bytes(file);
 
     char *destination = argv[2];
     char *destination_ip;
@@ -41,6 +47,18 @@ int main(int argc, char **argv) {
         destination_path = strtok(NULL, ":");
     } else {
         destination_path = destination;
+    }
+
+    if (strstr(file_name, "/") != NULL) {
+        char *last_token;
+        char *token = strtok(file_name, "/");
+        
+        while (token != NULL) {
+            last_token = token;
+            token = strtok(NULL, "/");
+        }
+
+        file_name = last_token;
     }
 
     strcat(destination_path, file_name);
@@ -54,13 +72,7 @@ int main(int argc, char **argv) {
     printf("Caminho de destino: %s\n", file_info.path);
     printf("TAMANHO ARQUIVO CLIENTE: %ld \n", file_info.size);
 
-    int sockfd;
-    struct sockaddr_in address;
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = inet_addr(destination_ip);
-    address.sin_port = htons(PORT);
+    create_socket(destination_ip);
 
     if (connect(sockfd, (struct sockaddr *)&address, sizeof(address)) == -1) {
         perror("oops: client1");
