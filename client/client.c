@@ -1,10 +1,7 @@
-#include <sys/types.h>
-#include <sys/socket.h>
 #include <stdio.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
-#include <unistd.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <string.h>
 #include "../common.h"
 #include "client.h"
@@ -109,6 +106,7 @@ int main(int argc, char **argv) {
         char* file_name = get_file_name_from_path(client_path);
 
         // Concatena caminho de destino com o arquivo
+        strcat(server_path, "/");
         strcat(server_path, file_name);
 
         struct copy_request request_info;
