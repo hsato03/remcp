@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <signal.h>
+#include <sys/file.h>
 #include "../common.h"
 #include "server.h"
 
@@ -24,20 +26,20 @@ void initiliaze_socket() {
 }
 
 void* handle_client(void* client_sockfd_ptr) {
-    printf("Executando na thread (handle_client).\n");
     int client_sockfd = *(int*)client_sockfd_ptr;
     free(client_sockfd_ptr);
     struct copy_request request_info;
     char file_chunks[BUFFER_SIZE];
     long file_size;
     FILE* file;
+    int fd;
 
     // Recebe as informações da transferência
     if (read(client_sockfd, &request_info, sizeof(request_info)) <= 0) {
         perror("Cliente desconectado ou erro ao ler dados");
         close(client_sockfd);
         pthread_exit(NULL);
-    }    
+    }
     printf("request file name: %s\n", request_info.file_path);
     printf("request file size: %ld\n", request_info.file_size);
     printf("TIPO: %s\n", request_info.type);
@@ -45,10 +47,13 @@ void* handle_client(void* client_sockfd_ptr) {
 
     if (strcmp(request_info.type, CLIENT_SEND) == 0) {
         strcat(request_info.file_path, ".part");
-        file = open_or_create_file(request_info.file_path);
-        if (file == NULL) {
-            perror("Erro ao criar o arquivo.");
-            exit(1);
+        file = open_or_create_file(request_info.file_path, client_sockfd);
+
+        fd = fileno(file);
+        if (flock(fd, LOCK_EX) == -1) {
+            perror("Erro ao aplicar o lock");
+            fclose(file);
+            exit(EXIT_FAILURE);
         }
 
         file_size = get_file_size_in_bytes(file);
@@ -61,7 +66,7 @@ void* handle_client(void* client_sockfd_ptr) {
             rename_file(request_info.file_path);
         }
     } else {
-        file = open_file(request_info.file_path);
+        file = open_file(request_info.file_path, client_sockfd);
         file_size = get_file_size_in_bytes(file);
         fseek(file, request_info.bytes_written, SEEK_SET);
 
@@ -78,9 +83,12 @@ void* handle_client(void* client_sockfd_ptr) {
 }
 
 int main() {
+    // Ignora SIGPIPE para evitar que o servidor termine ao escrever em um socket fechado
+    signal(SIGPIPE, SIG_IGN);
+
     create_socket();
     initiliaze_socket();
-    
+
     int client_len = sizeof(client_address);
     pthread_t client_thread;
     while (TRUE) {
@@ -94,9 +102,7 @@ int main() {
             continue;
         }
 
-        // TODO: Evitar com que a execução do servidor pare quando o cliente pare de receber o arquivo
-        //       Adicionar mutex ao abrir arquivo
-        //       Adicionar padrão throttling e retry
+        // TODO: Adicionar padrão throttling e retry
         if (pthread_create(&client_thread, NULL, handle_client, client_sockfd_ptr) != 0) {
             perror("Erro ao criar thread.");
             close(*client_sockfd_ptr);

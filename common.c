@@ -2,12 +2,19 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <sys/file.h>
 #include "common.h"
 
-void terminate(int sockfd, FILE* file, int status_code) {
+void terminate(int sockfd, FILE* file) {
     close(sockfd);
-    fclose(file);
-    exit(status_code);
+    if (file != NULL) {
+        if (flock(fileno(file), LOCK_UN) == -1) {
+            perror("Erro ao liberar o lock");
+        }
+        fclose(file);
+    }
+    pthread_exit(NULL);
 }
 
 int get_file_size_in_bytes(FILE* file) {
@@ -29,23 +36,42 @@ void show_progress(long write, long total, char* action) {
     fflush(stdout);
 }
 
-FILE* open_or_create_file(char *file_path) {
+FILE* open_or_create_file(char *file_path, int sockfd) {
     FILE* file = fopen(file_path, "rb+");
     if (file) {
         printf("Arquivo existente encontrado.\n");
-        return file;
+    } else {
+        printf("Arquivo não encontrado. Criando novo.\n");
+        file = fopen(file_path, "wb");
+        if (file == NULL) {
+            perror("Erro ao criar o arquivo");
+            terminate(sockfd, file);
+        }
     }
 
-    printf("Arquivo não encontrado. Criando novo.\n");
-    return fopen(file_path, "wb");
+    if (flock(fileno(file), LOCK_EX) == -1) {
+        perror("Erro ao aplicar o lock");
+        terminate(sockfd, file);
+    }
+
+    return file;
 }
 
-FILE* open_file(char *file_path) {
+FILE* open_file(char *file_path, int sockfd) {
     FILE* file = fopen(file_path, "r");
     if (file == NULL) {
         printf("Arquivo %s não encontrado.\n", file_path);
-        exit(1);
+        if (sockfd != -1) {
+            close(sockfd);
+        }
+        pthread_exit(NULL);
     }
+
+    if (flock(fileno(file), LOCK_EX) == -1) {
+        perror("Erro ao aplicar o lock");
+        terminate(sockfd, file);
+    }
+
 
     return file;
 }
@@ -56,8 +82,8 @@ void send_file(int sockfd, FILE* file, long file_size, long remote_file_size) {
     size_t bytes_read;
     while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
         if (write(sockfd, buffer, bytes_read) == -1) {
-            perror("Erro ao enviar os dados do arquivo");
-            terminate(sockfd, file, 1);
+            perror("\nErro ao enviar os dados do arquivo");
+            terminate(sockfd, file);
         }
 
         total_bytes_read += bytes_read;
@@ -78,7 +104,7 @@ long write_to_file(int remote_sockfd, FILE* file, long bytes_written, char *file
             // Atualiza o arquivo a cada 128 bytes
             if (buffer_offset == CHUNK_SIZE) {
                 if (fwrite(write_buffer, 1, CHUNK_SIZE, file) != CHUNK_SIZE) {
-                    perror("Erro ao escrever no arquivo");
+                    perror("\nErro ao escrever no arquivo");
                     break;
                 }
                 buffer_offset = 0;
@@ -90,7 +116,7 @@ long write_to_file(int remote_sockfd, FILE* file, long bytes_written, char *file
 
     if (buffer_offset > 0) {
         if (fwrite(write_buffer, 1, buffer_offset, file) != buffer_offset) {
-            perror("Erro ao escrever o restante no arquivo");
+            perror("\nErro ao escrever o restante no arquivo");
         }
         total_bytes_written += buffer_offset;
         show_progress(total_bytes_written, client_file_size, "escritos");

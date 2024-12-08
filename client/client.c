@@ -20,7 +20,6 @@ void validate_input(int parameters_size) {
     if (parameters_size < 3) {
         printf("É necessário passar 2 parametros: o arquivo que será copiado e o destino.\n");
         printf("Exemplo: ./remcp meu_arquivo.txt 192.168.0.5:/home/usuario/teste\n");
-        exit(1);
     }
 }
 
@@ -62,10 +61,9 @@ int main(int argc, char **argv) {
         strcat(client_path, file_name);
         strcat(client_path, ".part");
 
-        file = open_or_create_file(client_path);
+        file = open_or_create_file(client_path, sockfd);
         if (file == NULL) {
             perror("Erro ao criar o arquivo.");
-            exit(1);
         }
 
         struct copy_request request_info;
@@ -82,12 +80,12 @@ int main(int argc, char **argv) {
 
         if (connect(sockfd, (struct sockaddr *)&address, sizeof(address)) == -1) {
             perror("oops: client1");
-            terminate(sockfd, file, 1);
+            terminate(sockfd, file);
         }
 
         if (write(sockfd, &request_info, sizeof(request_info)) == -1) {
             perror("Erro ao enviar as informações do arquivo.");
-            terminate(sockfd, file, 1);
+            terminate(sockfd, file);
         }
 
         long server_file_size;
@@ -101,7 +99,7 @@ int main(int argc, char **argv) {
         split_server_info(argv[2], &server_ip, &server_path);
         client_path = argv[1];
 
-        file = open_file(client_path);
+        file = open_file(client_path, -1);
         long client_file_size = get_file_size_in_bytes(file);
         char* file_name = get_file_name_from_path(client_path);
 
@@ -122,12 +120,12 @@ int main(int argc, char **argv) {
 
         if (connect(sockfd, (struct sockaddr *)&address, sizeof(address)) == -1) {
             perror("oops: client1");
-            terminate(sockfd, file, 1);
+            terminate(sockfd, file);
         }
 
         if (write(sockfd, &request_info, sizeof(request_info)) == -1) {
             perror("Erro ao enviar as informações do arquivo.");
-            terminate(sockfd, file, 1);
+            terminate(sockfd, file);
         }
 
         long server_file_size;
@@ -142,5 +140,6 @@ int main(int argc, char **argv) {
         printf("\nArquivo enviado com sucesso.\n");
     }
 
-    terminate(sockfd, file, 0);
+    terminate(sockfd, file);
+    return 0;
 }

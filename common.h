@@ -23,10 +23,10 @@ struct server_response {
 
 int get_file_size_in_bytes(FILE* file);
 void show_progress(long write, long total, char* action);
-FILE* open_or_create_file(char *file_path);
-FILE* open_file(char *file_path);
+FILE* open_or_create_file(char *file_path, int sockfd);
+FILE* open_file(char *file_path, int sockfd);
 void send_file(int sockfd, FILE* file, long file_size, long remote_file_size);
-void terminate(int sockfd, FILE* file, int status_code);
+void terminate(int sockfd, FILE* file);
 long write_to_file(int remote_sockfd, FILE* file, long bytes_written, char *file_chunks, long client_file_size);
 void rename_file(char *file_path);
 
