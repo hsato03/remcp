@@ -108,7 +108,6 @@ int main() {
             continue;
         }
 
-        // TODO: Adicionar padrão throttling e retry
         int fail_code = FAIL;
         int succes_code = SUCCESS;
         if(get_number_of_clients() >= MAX_CLIENTS){
