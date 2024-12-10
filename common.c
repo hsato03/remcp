@@ -1,12 +1,12 @@
+#include <pthread.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 #include <sys/file.h>
+#include <unistd.h>
 #include "common.h"
 
-void terminate(int sockfd, FILE* file) {
+void terminate(int sockfd, FILE *file) {
     close(sockfd);
     if (file != NULL) {
         if (flock(fileno(file), LOCK_UN) == -1) {
@@ -17,7 +17,7 @@ void terminate(int sockfd, FILE* file) {
     pthread_exit(NULL);
 }
 
-int get_file_size_in_bytes(FILE* file) {
+int get_file_size_in_bytes(FILE *file) {
     fseek(file, 0, SEEK_END);
     return ftell(file);
 }
@@ -33,11 +33,14 @@ void show_progress(long write, long total, char* action) {
     }
 
     printf("] %ld/%ld bytes %s", write, total, action);
-    fflush(stdout);
+    // printf("Quantidade de clientes: %d ", get_number_of_clients());
+    printf(" --- Bytes/s/cliente: %d --- THREAD: %i\n", get_buffer_size(), gettid());
+    // fflush(stdout);
+    // system("clear");
 }
 
-FILE* open_or_create_file(char *file_path, int sockfd) {
-    FILE* file = fopen(file_path, "rb+");
+FILE *open_or_create_file(char *file_path, int sockfd) {
+    FILE *file = fopen(file_path, "rb+");
     if (file) {
         printf("Arquivo existente encontrado.\n");
     } else {
@@ -57,9 +60,9 @@ FILE* open_or_create_file(char *file_path, int sockfd) {
     return file;
 }
 
-FILE* open_file(char *file_path, int sockfd) {
-    FILE* file = fopen(file_path, "r");
-    if (file == NULL) {
+FILE *open_file(char *file_path, int sockfd) {
+    FILE *file = fopen(file_path, "r");
+    if (!file) {
         printf("Arquivo %s não encontrado.\n", file_path);
         if (sockfd != -1) {
             close(sockfd);
@@ -72,32 +75,69 @@ FILE* open_file(char *file_path, int sockfd) {
         terminate(sockfd, file);
     }
 
-
     return file;
 }
 
-void send_file(int sockfd, FILE* file, long file_size, long remote_file_size) {
+int number_of_clients = 0;
+pthread_mutex_t mutex;
+
+void add_to_number_of_clients() {
+    pthread_mutex_lock(&mutex);
+    number_of_clients++;
+    pthread_mutex_unlock(&mutex);
+}
+
+void rmv_to_number_of_clients() {
+    pthread_mutex_lock(&mutex);
+    number_of_clients--;
+    pthread_mutex_unlock(&mutex);
+}
+
+int get_number_of_clients() {
+    pthread_mutex_lock(&mutex);
+    int temp = number_of_clients;
+    pthread_mutex_unlock(&mutex);
+    return temp;
+}
+
+int get_buffer_size() {
+    return (int)(BUFFER_SIZE / get_number_of_clients());
+}
+
+int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, int should_terminate) {
     long total_bytes_read = remote_file_size;
-    char buffer[BUFFER_SIZE];
+    char *buffer = (char *)malloc(get_buffer_size() * sizeof(char));
     size_t bytes_read;
-    while ((bytes_read = fread(buffer, 1, BUFFER_SIZE, file)) > 0) {
+    while ((bytes_read = fread(buffer, 1, get_buffer_size(), file)) > 0) {
+        printf("bytes lidos por vez: %ld\n", bytes_read);
+        printf("buffer size: %d\n", get_buffer_size());
+
         if (write(sockfd, buffer, bytes_read) == -1) {
             perror("\nErro ao enviar os dados do arquivo");
-            terminate(sockfd, file);
+            if (should_terminate) {
+                rmv_to_number_of_clients();
+                terminate(sockfd, file);
+            }
+            return FALSE;
         }
 
         total_bytes_read += bytes_read;
         show_progress(total_bytes_read, file_size, "enviados");
         sleep(1);
+        buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
     }
+    free(buffer);
+    return TRUE;
 }
 
-long write_to_file(int remote_sockfd, FILE* file, long bytes_written, char *file_chunks, long client_file_size) {
+long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long client_file_size) {
     ssize_t bytes_received;
     size_t buffer_offset = 0;
     char write_buffer[CHUNK_SIZE];
     long total_bytes_written = bytes_written;
-    while ((bytes_received = read(remote_sockfd, file_chunks, BUFFER_SIZE)) > 0) {
+    char *file_chunks = (char *)malloc(get_buffer_size() * sizeof(char));
+
+    while ((bytes_received = read(remote_sockfd, file_chunks, get_buffer_size())) > 0) {
         for (size_t i = 0; i < bytes_received; i++) {
             write_buffer[buffer_offset++] = file_chunks[i];
 
@@ -109,9 +149,13 @@ long write_to_file(int remote_sockfd, FILE* file, long bytes_written, char *file
                 }
                 buffer_offset = 0;
                 total_bytes_written += CHUNK_SIZE;
-                show_progress(total_bytes_written, client_file_size, "escritos");
             }
         }
+
+        sleep(1);
+        file_chunks = (char *)realloc(file_chunks, get_buffer_size() * sizeof(char));
+        printf("Bytes recebidos: %zu", bytes_received);
+        show_progress(total_bytes_written, client_file_size, "escritos");
     }
 
     if (buffer_offset > 0) {
@@ -121,14 +165,14 @@ long write_to_file(int remote_sockfd, FILE* file, long bytes_written, char *file
         total_bytes_written += buffer_offset;
         show_progress(total_bytes_written, client_file_size, "escritos");
     }
-
+    free(file_chunks);
     return total_bytes_written;
 }
 
 void rename_file(char *file_path) {
     printf("\nRENOMEANDO\n");
-    char new_file_name[BUFFER_SIZE];
+    char new_file_name[get_buffer_size()];
     strcpy(new_file_name, file_path);
-    new_file_name[strlen(new_file_name)-5] = '\0';
+    new_file_name[strlen(new_file_name) - 5] = '\0';
     rename(file_path, new_file_name);
 }
