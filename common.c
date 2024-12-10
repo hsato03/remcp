@@ -1,12 +1,12 @@
+#include <pthread.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 #include <sys/file.h>
+#include <unistd.h>
 #include "common.h"
 
-void terminate(int sockfd, FILE* file) {
+void terminate(int sockfd, FILE *file) {
     close(sockfd);
     if (file != NULL) {
         if (flock(fileno(file), LOCK_UN) == -1) {
@@ -17,7 +17,7 @@ void terminate(int sockfd, FILE* file) {
     pthread_exit(NULL);
 }
 
-int get_file_size_in_bytes(FILE* file) {
+int get_file_size_in_bytes(FILE *file) {
     fseek(file, 0, SEEK_END);
     return ftell(file);
 }
@@ -39,8 +39,8 @@ void show_progress(long write, long total, char* action) {
     // system("clear");
 }
 
-FILE* open_or_create_file(char *file_path, int sockfd) {
-    FILE* file = fopen(file_path, "rb+");
+FILE *open_or_create_file(char *file_path, int sockfd) {
+    FILE *file = fopen(file_path, "rb+");
     if (file) {
         printf("Arquivo existente encontrado.\n");
     } else {
@@ -60,8 +60,8 @@ FILE* open_or_create_file(char *file_path, int sockfd) {
     return file;
 }
 
-FILE* open_file(char *file_path, int sockfd) {
-    FILE* file = fopen(file_path, "r");
+FILE *open_file(char *file_path, int sockfd) {
+    FILE *file = fopen(file_path, "r");
     if (!file) {
         printf("Arquivo %s não encontrado.\n", file_path);
         if (sockfd != -1) {
@@ -74,7 +74,6 @@ FILE* open_file(char *file_path, int sockfd) {
         perror("Erro ao aplicar o lock");
         terminate(sockfd, file);
     }
-
 
     return file;
 }
@@ -101,27 +100,25 @@ int get_number_of_clients() {
     return temp;
 }
 
-int get_buffer_size(){
-    return (int)(BUFFER_SIZE/get_number_of_clients());
+int get_buffer_size() {
+    return (int)(BUFFER_SIZE / get_number_of_clients());
 }
 
-void send_file(int sockfd, FILE* file, long file_size, long remote_file_size, int* retries) {
+int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, int should_terminate) {
     long total_bytes_read = remote_file_size;
-    char* buffer = (char *)malloc(get_buffer_size() * sizeof(char));
+    char *buffer = (char *)malloc(get_buffer_size() * sizeof(char));
     size_t bytes_read;
     while ((bytes_read = fread(buffer, 1, get_buffer_size(), file)) > 0) {
-        printf("bytes lidos por vez: %d\n", bytes_read);
+        printf("bytes lidos por vez: %ld\n", bytes_read);
         printf("buffer size: %d\n", get_buffer_size());
 
         if (write(sockfd, buffer, bytes_read) == -1) {
             perror("\nErro ao enviar os dados do arquivo");
-            if(retries != NULL){
-                *retries = 1;
-                return;
-            } else {
+            if (should_terminate) {
                 rmv_to_number_of_clients();
                 terminate(sockfd, file);
             }
+            return FALSE;
         }
 
         total_bytes_read += bytes_read;
@@ -130,9 +127,10 @@ void send_file(int sockfd, FILE* file, long file_size, long remote_file_size, in
         buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
     }
     free(buffer);
+    return TRUE;
 }
 
-long write_to_file(int remote_sockfd, FILE* file, long bytes_written, long client_file_size) {
+long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long client_file_size) {
     ssize_t bytes_received;
     size_t buffer_offset = 0;
     char write_buffer[CHUNK_SIZE];
@@ -151,13 +149,13 @@ long write_to_file(int remote_sockfd, FILE* file, long bytes_written, long clien
                 }
                 buffer_offset = 0;
                 total_bytes_written += CHUNK_SIZE;
-                show_progress(total_bytes_written, client_file_size, "escritos");
             }
         }
 
         sleep(1);
         file_chunks = (char *)realloc(file_chunks, get_buffer_size() * sizeof(char));
         printf("Bytes recebidos: %zu", bytes_received);
+        show_progress(total_bytes_written, client_file_size, "escritos");
     }
 
     if (buffer_offset > 0) {
@@ -175,6 +173,6 @@ void rename_file(char *file_path) {
     printf("\nRENOMEANDO\n");
     char new_file_name[get_buffer_size()];
     strcpy(new_file_name, file_path);
-    new_file_name[strlen(new_file_name)-5] = '\0';
+    new_file_name[strlen(new_file_name) - 5] = '\0';
     rename(file_path, new_file_name);
 }

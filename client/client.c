@@ -1,12 +1,12 @@
-#include <stdio.h>
 #include <arpa/inet.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
-#include <signal.h>
 #include <math.h>
-#include "../common.h"
+#include <signal.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include "client.h"
+#include "../common.h"
 
 int sockfd;
 struct sockaddr_in address;
@@ -15,32 +15,26 @@ char *server_ip;
 char *server_path;
 FILE *file;
 
-void create_socket(char *server_ip)
-{
+void create_socket(char *server_ip) {
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = inet_addr(server_ip);
     address.sin_port = htons(PORT);
 }
 
-void validate_input(int parameters_size)
-{
-    if (parameters_size < 3)
-    {
+void validate_input(int parameters_size) {
+    if (parameters_size < 3) {
         printf("É necessário passar 2 parametros: o arquivo que será copiado e o destino.\n");
         printf("Exemplo: ./remcp meu_arquivo.txt 192.168.0.5:/home/usuario/teste\n");
     }
 }
 
-char *get_file_name_from_path(char *file_path)
-{
-    if (strstr(file_path, "/") != NULL)
-    {
+char *get_file_name_from_path(char *file_path) {
+    if (strstr(file_path, "/") != NULL) {
         char *last_token;
         char *token = strtok(strdup(file_path), "/");
 
-        while (token != NULL)
-        {
+        while (token != NULL) {
             last_token = token;
             token = strtok(NULL, "/");
         }
@@ -51,8 +45,7 @@ char *get_file_name_from_path(char *file_path)
     return file_path;
 }
 
-void split_server_info(char *server_info, char **server_ip, char **server_path)
-{
+void split_server_info(char *server_info, char **server_ip, char **server_path) {
     *server_ip = strtok(strdup(server_info), ":");
     *server_path = strchr(server_info, ':') + 1;
 }
@@ -66,8 +59,7 @@ void server_to_client_transfer(char **argv) {
     strcat(client_path, ".part");
 
     file = open_or_create_file(client_path, sockfd);
-    if (file == NULL)
-    {
+    if (file == NULL) {
         perror("Erro ao criar o arquivo.");
     }
 
@@ -81,42 +73,32 @@ void server_to_client_transfer(char **argv) {
     printf("TAMANHO ARQUIVO CLIENTE: %ld \n", request_info.file_size);
     printf("TOTAL JA ESCRITO: %ld \n", request_info.bytes_written);
 
-
     int retries = 0;
-    int temp = 0;
-    while (retries < MAX_TRIES)
-    {
-        temp = 0;
-        if (retries > 0)
-        {
+    while (retries <= MAX_RETRIES) {
+        if (retries > 0) {
             printf("Erro ao se comunicar com o servidor. Retentando em %i segundos\n", retries * 4);
             sleep(retries * 5);
         }
 
+        close(sockfd);
         create_socket(server_ip);
 
-        if (connect(sockfd, (struct sockaddr *)&address, sizeof(address)) == -1)
-        {
+        if (connect(sockfd, (struct sockaddr *)&address, sizeof(address)) == -1) {
             perror("oops: client1");
             retries++;
             continue;
         }
 
         int response;
-        if (read(sockfd, &response, sizeof(response)) < 0)
-        {
+        if (read(sockfd, &response, sizeof(response)) < 0) {
             perror("Erro ao receber dado");
             retries++;
             continue;
-        }
-        else
-        {
-            response = ntohl(response);
-            printf("Número recebido: %d\n", response);
-        }
+        } 
+        response = response;
+        printf("Número recebido: %d\n", response);
 
-        if (write(sockfd, &request_info, sizeof(request_info)) == -1)
-        {
+        if (write(sockfd, &request_info, sizeof(request_info)) == -1) {
             perror("Erro ao enviar as informações do arquivo.");
             retries++;
             continue;
@@ -127,8 +109,7 @@ void server_to_client_transfer(char **argv) {
         printf("TAMANHO ARQUIVO SERVIDOR: %ld\n", server_file_size);
 
         long total_bytes_write = write_to_file(sockfd, file, request_info.bytes_written, server_file_size);
-        if (total_bytes_write == server_file_size)
-        {
+        if (total_bytes_write == server_file_size) {
             rename_file(client_path);
         }
         break;
@@ -157,46 +138,36 @@ void client_to_server_transfer(char **argv) {
     printf("TAMANHO ARQUIVO CLIENTE: %ld \n", request_info.file_size);
 
     int retries = 0;
-    int temp = 0;
-    while (retries < MAX_TRIES)
-    {
-        temp = 0;
-        if (retries > 0)
-        {
+    while (retries <= MAX_RETRIES) {
+        if (retries > 0) {
             printf("Erro ao se comunicar com o servidor. Retentando em %i segundos\n", retries * 4);
             sleep(retries * 5);
         }
-        
+
+        close(sockfd);
         create_socket(server_ip);
 
-        if (connect(sockfd, (struct sockaddr *)&address, sizeof(address)) == -1)
-        {
+        if (connect(sockfd, (struct sockaddr *)&address, sizeof(address)) == -1) {
             perror("oops: client1");
             retries++;
             continue;
         }
 
         int response;
-        if (read(sockfd, &response, sizeof(response)) < 0)
-        {
+        if (read(sockfd, &response, sizeof(response)) < 0) {
             perror("Erro ao receber dado");
             retries++;
             continue;
-        }
-        else
-        {
-            response = ntohl(response);
-            printf("Número recebido: %d\n", response);
-        }
+        } 
+        printf("Número recebido: %d\n", response);
+    
 
-        if (response == FAIL)
-        {
+        if (response == FAIL) {
             retries++;
             continue;
         }
 
-        if (write(sockfd, &request_info, sizeof(request_info)) == -1)
-        {
+        if (write(sockfd, &request_info, sizeof(request_info)) == -1) {
             perror("Erro ao enviar as informações do arquivo.");
             retries++;
             continue;
@@ -209,29 +180,24 @@ void client_to_server_transfer(char **argv) {
         // Pula os bytes ja transferidos
         fseek(file, server_file_size, SEEK_SET);
 
-        send_file(sockfd, file, client_file_size, server_file_size, &temp);
-
-        if (temp != 0)
+        if (send_file(sockfd, file, client_file_size, server_file_size, 0) < 1) {
             continue;
-        
+        }
+
         printf("\nArquivo enviado com sucesso.\n");
         break;
     }
 }
 
-int main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
 
     add_to_number_of_clients();
     validate_input(argc);
 
-    if (strstr(argv[1], ":") != NULL)
-    {
+    if (strstr(argv[1], ":") != NULL) {
         server_to_client_transfer(argv);
-    }
-    else
-    {
+    } else {
         client_to_server_transfer(argv);
     }
 
