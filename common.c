@@ -187,6 +187,14 @@ void rename_file(char *file_path) {
     rename(file_path, new_file_name);
 }
 
+void remove_trailing_slashes(char *str) {
+    size_t len = strlen(str);
+    if (len > 0 && str[len - 1] == '/') {
+        str[len - 1] = '\0';
+        remove_trailing_slashes(str);
+    }
+}
+
 char *get_file_name_from_path(char *file_path) {
     if (strstr(file_path, "/") != NULL) {
         char *last_token;
@@ -200,5 +208,6 @@ char *get_file_name_from_path(char *file_path) {
         return last_token;
     }
 
+    remove_trailing_slash(file_path);
     return file_path;
 }

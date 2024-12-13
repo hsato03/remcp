@@ -49,6 +49,7 @@ void server_to_client_transfer(char **argv) {
 
     struct copy_request request_info;
     strncpy(request_info.file_path, server_path, sizeof(request_info.file_path) - 1);
+    remove_trailing_slash(request_info.file_path);
     strncpy(request_info.type, CLIENT_RECEIVE, sizeof(request_info.type) - 1);
     request_info.bytes_written = get_file_size_in_bytes(file);
 
@@ -104,6 +105,7 @@ void server_to_client_transfer(char **argv) {
 void client_to_server_transfer(char **argv) {
     split_server_info(argv[2], &server_ip, &server_path);
     client_path = argv[1];
+    remove_trailing_slash(client_path);
 
     file = open_file(client_path, -1);
     long client_file_size = get_file_size_in_bytes(file);

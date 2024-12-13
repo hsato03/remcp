@@ -97,7 +97,6 @@ int main() {
     int client_len = sizeof(client_address);
     pthread_t client_thread;
     while (TRUE) {
-        printf("Executando no loop principal (main).\n");
         printf("server waiting\n");
         int *client_sockfd_ptr = malloc(sizeof(int));
         *client_sockfd_ptr = accept(server_sockfd, (struct sockaddr *)&client_address, &client_len);

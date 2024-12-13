@@ -41,5 +41,6 @@ void decrease_number_of_clients();
 int get_number_of_clients();
 int get_buffer_size();
 char* get_file_name_from_path(char* file_path);
+void remove_trailing_slashes(char *str);
 
 #endif
