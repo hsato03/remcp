@@ -29,22 +29,6 @@ void validate_input(int parameters_size) {
     }
 }
 
-char *get_file_name_from_path(char *file_path) {
-    if (strstr(file_path, "/") != NULL) {
-        char *last_token;
-        char *token = strtok(strdup(file_path), "/");
-
-        while (token != NULL) {
-            last_token = token;
-            token = strtok(NULL, "/");
-        }
-
-        return last_token;
-    }
-
-    return file_path;
-}
-
 void split_server_info(char *server_info, char **server_ip, char **server_path) {
     *server_ip = strtok(strdup(server_info), ":");
     *server_path = strchr(server_info, ':') + 1;
@@ -92,7 +76,7 @@ void server_to_client_transfer(char **argv) {
         int response;
         if (read(sockfd, &response, sizeof(response)) < 0) {
             perror("Erro ao receber dado");
-            retries++;
+            retries = 0;
             continue;
         } 
         response = response;
@@ -100,7 +84,7 @@ void server_to_client_transfer(char **argv) {
 
         if (write(sockfd, &request_info, sizeof(request_info)) == -1) {
             perror("Erro ao enviar as informações do arquivo.");
-            retries++;
+            retries = 0;
             continue;
         }
 
@@ -108,11 +92,12 @@ void server_to_client_transfer(char **argv) {
         read(sockfd, &server_file_size, sizeof(server_file_size));
         printf("TAMANHO ARQUIVO SERVIDOR: %ld\n", server_file_size);
 
-        long total_bytes_write = write_to_file(sockfd, file, request_info.bytes_written, server_file_size);
+        long total_bytes_write = write_to_file(sockfd, file, request_info.bytes_written, server_file_size, file_name, TRUE);
         if (total_bytes_write == server_file_size) {
             rename_file(client_path);
             return;
         }
+        retries = 0;
     }
 }
 
@@ -156,20 +141,20 @@ void client_to_server_transfer(char **argv) {
         int response;
         if (read(sockfd, &response, sizeof(response)) < 0) {
             perror("Erro ao receber dado");
-            retries++;
+            retries = 0;
             continue;
         } 
         printf("Número recebido: %d\n", response);
     
 
         if (response == FAIL) {
-            retries++;
+            retries = 0;
             continue;
         }
 
         if (write(sockfd, &request_info, sizeof(request_info)) == -1) {
             perror("Erro ao enviar as informações do arquivo.");
-            retries++;
+            retries = 0;
             continue;
         }
 
@@ -180,7 +165,8 @@ void client_to_server_transfer(char **argv) {
         // Pula os bytes ja transferidos
         fseek(file, server_file_size, SEEK_SET);
 
-        if (send_file(sockfd, file, client_file_size, server_file_size, FALSE) < 1) {
+        if (send_file(sockfd, file, client_file_size, server_file_size, file_name, TRUE) < 1) {
+            retries = 0;
             continue;
         }
 
@@ -192,9 +178,14 @@ void client_to_server_transfer(char **argv) {
 int main(int argc, char **argv) {
     signal(SIGPIPE, SIG_IGN);
 
-    add_to_number_of_clients();
+    increase_number_of_clients();
     validate_input(argc);
 
+    // TODO: testar a transferencia com entradas em diferentes formatos
+    //          1. ./client.out remcp/meuarquivo.txt/ 127.0.0.1:/tmp/
+    //          2. ./client.out remcp/meuarquivo.txt/ 127.0.0.1:/tmp
+    //          3. ./client.out remcp/meuarquivo.txt 127.0.0.1:/tmp/
+    //          4. ./client.out remcp/meuarquivo.txt 127.0.0.1:/tmp
     if (strstr(argv[1], ":") != NULL) {
         server_to_client_transfer(argv);
     } else {

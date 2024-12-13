@@ -29,6 +29,7 @@ void initiliaze_socket() {
 }
 
 void *handle_client(void *client_sockfd_ptr) {
+    increase_number_of_clients();
     struct timeval t1, t2;
     gettimeofday(&t1, NULL);
     int client_sockfd = *(int *)client_sockfd_ptr;
@@ -45,12 +46,12 @@ void *handle_client(void *client_sockfd_ptr) {
         pthread_exit(NULL);
     }
 
-    add_to_number_of_clients();
-
     printf("request file name: %s\n", request_info.file_path);
     printf("request file size: %ld\n", request_info.file_size);
     printf("TIPO: %s\n", request_info.type);
     printf("BYTES WRITTEN: %ld\n", request_info.bytes_written);
+
+    char* file_name = get_file_name_from_path(request_info.file_path);
 
     if (strcmp(request_info.type, CLIENT_SEND) == 0) {
         strcat(request_info.file_path, ".part");
@@ -61,7 +62,7 @@ void *handle_client(void *client_sockfd_ptr) {
         // Envia a quantidade de bytes já escrita para o cliente
         write(client_sockfd, &file_size, sizeof(file_size));
 
-        long total_bytes_write = write_to_file(client_sockfd, file, file_size, request_info.file_size);
+        long total_bytes_write = write_to_file(client_sockfd, file, file_size, request_info.file_size, file_name, FALSE);
         if (total_bytes_write == request_info.file_size) {
             rename_file(request_info.file_path);
         }
@@ -74,10 +75,10 @@ void *handle_client(void *client_sockfd_ptr) {
         write(client_sockfd, &file_size, sizeof(file_size));
 
         printf("TAMANHO ARQUIVO SERVIDOR %ld\n", file_size);
-        send_file(client_sockfd, file, file_size, request_info.bytes_written, TRUE);
+        send_file(client_sockfd, file, file_size, request_info.bytes_written, file_name, FALSE);
     }
 
-    rmv_to_number_of_clients();
+    decrease_number_of_clients();
 
     gettimeofday(&t2, NULL);
     double t_total = (t2.tv_sec - t1.tv_sec) + ((t2.tv_usec - t1.tv_usec) / 1000000.0);

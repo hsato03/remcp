@@ -22,7 +22,8 @@ int get_file_size_in_bytes(FILE *file) {
     return ftell(file);
 }
 
-void show_progress(long write, long total, char* action) {
+void show_progress(long write, long total, char* action, char* file_name, int is_client) {
+    // TODO: sincronizar barra de progresso com o servidor
     int progress = (int)((double)write / total * 50);
     printf("\r[");
     for (int i = 0; i < 50; i++) {
@@ -33,10 +34,13 @@ void show_progress(long write, long total, char* action) {
     }
 
     printf("] %ld/%ld bytes %s", write, total, action);
-    // printf("Quantidade de clientes: %d ", get_number_of_clients());
-    printf(" --- Bytes/s/cliente: %d --- THREAD: %i\n", get_buffer_size(), gettid());
-    // fflush(stdout);
-    // system("clear");
+    printf(" --- %d Bps --- %s", get_buffer_size(), file_name);
+    if (is_client) {
+        fflush(stdout);
+    } else {
+        printf("\n");
+    }
+    
 }
 
 FILE *open_or_create_file(char *file_path, int sockfd) {
@@ -81,13 +85,13 @@ FILE *open_file(char *file_path, int sockfd) {
 int number_of_clients = 0;
 pthread_mutex_t mutex;
 
-void add_to_number_of_clients() {
+void increase_number_of_clients() {
     pthread_mutex_lock(&mutex);
     number_of_clients++;
     pthread_mutex_unlock(&mutex);
 }
 
-void rmv_to_number_of_clients() {
+void decrease_number_of_clients() {
     pthread_mutex_lock(&mutex);
     number_of_clients--;
     pthread_mutex_unlock(&mutex);
@@ -104,27 +108,20 @@ int get_buffer_size() {
     return (int)(BUFFER_SIZE / get_number_of_clients());
 }
 
-int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, int should_terminate) {
+int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, char *file_name, int is_client) {
     int last_num_of_clients = get_number_of_clients();
     int current_num_of_clients = -1;
     long total_bytes_read = remote_file_size;
     char *buffer = (char *)malloc(get_buffer_size() * sizeof(char));
     size_t bytes_read;
     while ((bytes_read = fread(buffer, 1, get_buffer_size(), file)) > 0) {
-        printf("bytes lidos por vez: %ld\n", bytes_read);
-        printf("buffer size: %d\n", get_buffer_size());
-
         if (write(sockfd, buffer, bytes_read) == -1) {
             perror("\nErro ao enviar os dados do arquivo");
-            if (should_terminate) {
-                rmv_to_number_of_clients();
-                terminate(sockfd, file);
-            }
             return FALSE;
         }
 
         total_bytes_read += bytes_read;
-        show_progress(total_bytes_read, file_size, "enviados");
+        show_progress(total_bytes_read, file_size, "enviados", file_name, is_client);
         sleep(1);
 
         current_num_of_clients = get_number_of_clients();
@@ -137,7 +134,7 @@ int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, int
     return TRUE;
 }
 
-long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long client_file_size) {
+long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long client_file_size, char* file_name, int is_client) {
     int last_num_of_clients = get_number_of_clients();
     int current_num_of_clients = -1;
     ssize_t bytes_received;
@@ -161,8 +158,7 @@ long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long clien
             }
         }
 
-        printf("Bytes recebidos: %zu", bytes_received);
-        show_progress(total_bytes_written, client_file_size, "escritos");
+        show_progress(total_bytes_written, client_file_size, "escritos", file_name, is_client);
         sleep(1);
 
         current_num_of_clients = get_number_of_clients();
@@ -177,7 +173,7 @@ long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long clien
             perror("\nErro ao escrever o restante no arquivo");
         }
         total_bytes_written += buffer_offset;
-        show_progress(total_bytes_written, client_file_size, "escritos");
+        show_progress(total_bytes_written, client_file_size, "escritos", file_name, is_client);
     }
     free(buffer);
     return total_bytes_written;
@@ -189,4 +185,20 @@ void rename_file(char *file_path) {
     strcpy(new_file_name, file_path);
     new_file_name[strlen(new_file_name) - 5] = '\0';
     rename(file_path, new_file_name);
+}
+
+char *get_file_name_from_path(char *file_path) {
+    if (strstr(file_path, "/") != NULL) {
+        char *last_token;
+        char *token = strtok(strdup(file_path), "/");
+
+        while (token != NULL) {
+            last_token = token;
+            token = strtok(NULL, "/");
+        }
+
+        return last_token;
+    }
+
+    return file_path;
 }
