@@ -111,8 +111,8 @@ void server_to_client_transfer(char **argv) {
         long total_bytes_write = write_to_file(sockfd, file, request_info.bytes_written, server_file_size);
         if (total_bytes_write == server_file_size) {
             rename_file(client_path);
+            return;
         }
-        break;
     }
 }
 
@@ -180,12 +180,12 @@ void client_to_server_transfer(char **argv) {
         // Pula os bytes ja transferidos
         fseek(file, server_file_size, SEEK_SET);
 
-        if (send_file(sockfd, file, client_file_size, server_file_size, 0) < 1) {
+        if (send_file(sockfd, file, client_file_size, server_file_size, FALSE) < 1) {
             continue;
         }
 
         printf("\nArquivo enviado com sucesso.\n");
-        break;
+        return;
     }
 }
 

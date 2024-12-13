@@ -105,6 +105,8 @@ int get_buffer_size() {
 }
 
 int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, int should_terminate) {
+    int last_num_of_clients = get_number_of_clients();
+    int current_num_of_clients = -1;
     long total_bytes_read = remote_file_size;
     char *buffer = (char *)malloc(get_buffer_size() * sizeof(char));
     size_t bytes_read;
@@ -124,22 +126,29 @@ int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, int
         total_bytes_read += bytes_read;
         show_progress(total_bytes_read, file_size, "enviados");
         sleep(1);
-        buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
+
+        current_num_of_clients = get_number_of_clients();
+        if (current_num_of_clients != last_num_of_clients) {
+            buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
+            last_num_of_clients = current_num_of_clients;
+        }
     }
     free(buffer);
     return TRUE;
 }
 
 long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long client_file_size) {
+    int last_num_of_clients = get_number_of_clients();
+    int current_num_of_clients = -1;
     ssize_t bytes_received;
     size_t buffer_offset = 0;
     char write_buffer[CHUNK_SIZE];
     long total_bytes_written = bytes_written;
-    char *file_chunks = (char *)malloc(get_buffer_size() * sizeof(char));
+    char *buffer = (char *)malloc(get_buffer_size() * sizeof(char));
 
-    while ((bytes_received = read(remote_sockfd, file_chunks, get_buffer_size())) > 0) {
+    while ((bytes_received = read(remote_sockfd, buffer, get_buffer_size())) > 0) {
         for (size_t i = 0; i < bytes_received; i++) {
-            write_buffer[buffer_offset++] = file_chunks[i];
+            write_buffer[buffer_offset++] = buffer[i];
 
             // Atualiza o arquivo a cada 128 bytes
             if (buffer_offset == CHUNK_SIZE) {
@@ -152,10 +161,15 @@ long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long clien
             }
         }
 
-        sleep(1);
-        file_chunks = (char *)realloc(file_chunks, get_buffer_size() * sizeof(char));
         printf("Bytes recebidos: %zu", bytes_received);
         show_progress(total_bytes_written, client_file_size, "escritos");
+        sleep(1);
+
+        current_num_of_clients = get_number_of_clients();
+        if (current_num_of_clients != last_num_of_clients) {
+            buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
+            last_num_of_clients = current_num_of_clients;
+        }
     }
 
     if (buffer_offset > 0) {
@@ -165,7 +179,7 @@ long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long clien
         total_bytes_written += buffer_offset;
         show_progress(total_bytes_written, client_file_size, "escritos");
     }
-    free(file_chunks);
+    free(buffer);
     return total_bytes_written;
 }
 

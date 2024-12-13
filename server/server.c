@@ -13,8 +13,8 @@
 int server_sockfd, client_sockfd;
 struct sockaddr_in server_address;
 struct sockaddr_in client_address;
-int succes_code = SUCCESS;
-int fail_code = FAIL;
+const int succes_code = SUCCESS;
+const int fail_code = FAIL;
 
 void create_socket() {
     server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -74,7 +74,7 @@ void *handle_client(void *client_sockfd_ptr) {
         write(client_sockfd, &file_size, sizeof(file_size));
 
         printf("TAMANHO ARQUIVO SERVIDOR %ld\n", file_size);
-        send_file(client_sockfd, file, file_size, request_info.bytes_written, 0);
+        send_file(client_sockfd, file, file_size, request_info.bytes_written, TRUE);
     }
 
     rmv_to_number_of_clients();
