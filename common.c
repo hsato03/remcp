@@ -22,7 +22,7 @@ int get_file_size_in_bytes(FILE *file) {
     return ftell(file);
 }
 
-void show_progress(long write, long total, char* action, char* file_name, int is_client) {
+void show_progress(long write, long total, char* action, char* file_name, int is_client, int transfer_rate) {
     // TODO: sincronizar barra de progresso com o servidor
     int progress = (int)((double)write / total * 50);
     printf("\r[");
@@ -34,13 +34,12 @@ void show_progress(long write, long total, char* action, char* file_name, int is
     }
 
     printf("] %ld/%ld bytes %s", write, total, action);
-    printf(" --- %d Bps --- %s", get_buffer_size(), file_name);
+    printf(" --- %d Bps --- %s", transfer_rate, file_name);
     if (is_client) {
         fflush(stdout);
     } else {
         printf("\n");
-    }
-    
+    }    
 }
 
 FILE *open_or_create_file(char *file_path, int sockfd) {
@@ -82,106 +81,8 @@ FILE *open_file(char *file_path, int sockfd) {
     return file;
 }
 
-int number_of_clients = 0;
-pthread_mutex_t mutex;
-
-void increase_number_of_clients() {
-    pthread_mutex_lock(&mutex);
-    number_of_clients++;
-    pthread_mutex_unlock(&mutex);
-}
-
-void decrease_number_of_clients() {
-    pthread_mutex_lock(&mutex);
-    number_of_clients--;
-    pthread_mutex_unlock(&mutex);
-}
-
-int get_number_of_clients() {
-    pthread_mutex_lock(&mutex);
-    int temp = number_of_clients;
-    pthread_mutex_unlock(&mutex);
-    return temp;
-}
-
-int get_buffer_size() {
-    return (int)(BUFFER_SIZE / get_number_of_clients());
-}
-
-int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, char *file_name, int is_client) {
-    int last_num_of_clients = get_number_of_clients();
-    int current_num_of_clients = -1;
-    long total_bytes_read = remote_file_size;
-    char *buffer = (char *)malloc(get_buffer_size() * sizeof(char));
-    size_t bytes_read;
-    while ((bytes_read = fread(buffer, 1, get_buffer_size(), file)) > 0) {
-        if (write(sockfd, buffer, bytes_read) == -1) {
-            perror("\nErro ao enviar os dados do arquivo");
-            return FALSE;
-        }
-
-        total_bytes_read += bytes_read;
-        show_progress(total_bytes_read, file_size, "enviados", file_name, is_client);
-        sleep(1);
-
-        current_num_of_clients = get_number_of_clients();
-        if (current_num_of_clients != last_num_of_clients) {
-            buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
-            last_num_of_clients = current_num_of_clients;
-        }
-    }
-    free(buffer);
-    return TRUE;
-}
-
-long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long client_file_size, char* file_name, int is_client) {
-    int last_num_of_clients = get_number_of_clients();
-    int current_num_of_clients = -1;
-    ssize_t bytes_received;
-    size_t buffer_offset = 0;
-    char write_buffer[CHUNK_SIZE];
-    long total_bytes_written = bytes_written;
-    char *buffer = (char *)malloc(get_buffer_size() * sizeof(char));
-
-    while ((bytes_received = read(remote_sockfd, buffer, get_buffer_size())) > 0) {
-        for (size_t i = 0; i < bytes_received; i++) {
-            write_buffer[buffer_offset++] = buffer[i];
-
-            // Atualiza o arquivo a cada 128 bytes
-            if (buffer_offset == CHUNK_SIZE) {
-                if (fwrite(write_buffer, 1, CHUNK_SIZE, file) != CHUNK_SIZE) {
-                    perror("\nErro ao escrever no arquivo");
-                    break;
-                }
-                buffer_offset = 0;
-                total_bytes_written += CHUNK_SIZE;
-            }
-        }
-
-        show_progress(total_bytes_written, client_file_size, "escritos", file_name, is_client);
-        sleep(1);
-
-        current_num_of_clients = get_number_of_clients();
-        if (current_num_of_clients != last_num_of_clients) {
-            buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
-            last_num_of_clients = current_num_of_clients;
-        }
-    }
-
-    if (buffer_offset > 0) {
-        if (fwrite(write_buffer, 1, buffer_offset, file) != buffer_offset) {
-            perror("\nErro ao escrever o restante no arquivo");
-        }
-        total_bytes_written += buffer_offset;
-        show_progress(total_bytes_written, client_file_size, "escritos", file_name, is_client);
-    }
-    free(buffer);
-    return total_bytes_written;
-}
-
 void rename_file(char *file_path) {
-    printf("\nRENOMEANDO\n");
-    char new_file_name[get_buffer_size()];
+    char new_file_name[PATH_MAX_SIZE];
     strcpy(new_file_name, file_path);
     new_file_name[strlen(new_file_name) - 5] = '\0';
     rename(file_path, new_file_name);
@@ -208,6 +109,6 @@ char *get_file_name_from_path(char *file_path) {
         return last_token;
     }
 
-    remove_trailing_slash(file_path);
+    remove_trailing_slashes(file_path);
     return file_path;
 }

@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
-#include <sys/time.h>
 #include <unistd.h>
 #include "server.h"
 #include "../common.h"
@@ -15,6 +14,8 @@ struct sockaddr_in server_address;
 struct sockaddr_in client_address;
 const int succes_code = SUCCESS;
 const int fail_code = FAIL;
+int number_of_clients = 0;
+pthread_mutex_t mutex;
 
 void create_socket() {
     server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -25,13 +26,114 @@ void create_socket() {
 
 void initiliaze_socket() {
     bind(server_sockfd, (struct sockaddr *)&server_address, sizeof(server_address));
-    listen(server_sockfd, 1);
+    listen(server_sockfd, MAX_CLIENTS);
+}
+
+void increase_number_of_clients() {
+    pthread_mutex_lock(&mutex);
+    number_of_clients++;
+    pthread_mutex_unlock(&mutex);
+}
+
+void decrease_number_of_clients() {
+    pthread_mutex_lock(&mutex);
+    number_of_clients--;
+    pthread_mutex_unlock(&mutex);
+}
+
+int get_number_of_clients() {
+    pthread_mutex_lock(&mutex);
+    int temp = number_of_clients;
+    pthread_mutex_unlock(&mutex);
+    return temp;
+}
+
+int get_buffer_size() {
+    return (int)(BUFFER_SIZE / get_number_of_clients());
+}
+
+int send_file(int sockfd, FILE *file, long file_size, long remote_file_size, char *file_name) {
+    int last_num_of_clients = get_number_of_clients();
+    int current_num_of_clients = -1;
+    long total_bytes_read = remote_file_size;
+    char *buffer = (char *)malloc(get_buffer_size() * sizeof(char));
+    size_t bytes_read;
+
+    while ((bytes_read = fread(buffer, 1, get_buffer_size(), file)) > 0) {
+        if (write(sockfd, buffer, bytes_read) == -1) {
+            perror("\nErro ao enviar os dados do arquivo");
+            return FALSE;
+        }
+
+        total_bytes_read += bytes_read;
+        show_progress(total_bytes_read, file_size, "enviados", file_name, FALSE, get_buffer_size());
+        sleep(1);
+
+        current_num_of_clients = get_number_of_clients();
+        if (current_num_of_clients != last_num_of_clients) {
+            buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
+            last_num_of_clients = current_num_of_clients;
+        }
+    }
+
+    free(buffer);
+    return TRUE;
+}
+
+long write_to_file(int remote_sockfd, FILE *file, long bytes_written, long client_file_size, char* file_name) {
+    int last_num_of_clients = get_number_of_clients();
+    int current_num_of_clients = -1;
+    ssize_t bytes_received;
+    size_t buffer_offset = 0;
+    char write_buffer[CHUNK_SIZE];
+    long total_bytes_written = bytes_written;
+    int buffer_size = get_buffer_size();
+    char *buffer = (char *)malloc(buffer_size * sizeof(char));
+
+    write(remote_sockfd, &buffer_size, sizeof(buffer_size));
+
+    while ((bytes_received = read(remote_sockfd, buffer, get_buffer_size())) > 0) {
+        for (size_t i = 0; i < bytes_received; i++) {
+            write_buffer[buffer_offset++] = buffer[i];
+
+            // Atualiza o arquivo a cada 128 bytes
+            if (buffer_offset == CHUNK_SIZE) {
+                if (fwrite(write_buffer, 1, CHUNK_SIZE, file) != CHUNK_SIZE) {
+                    perror("\nErro ao escrever no arquivo");
+                    break;
+                }
+                buffer_offset = 0;
+                total_bytes_written += CHUNK_SIZE;
+            }
+        }
+
+        buffer_size = get_buffer_size();    
+        write(remote_sockfd, &buffer_size, sizeof(buffer_size));
+        
+        show_progress(total_bytes_written, client_file_size, "escritos", file_name, FALSE, buffer_size);
+        sleep(1);
+
+        current_num_of_clients = get_number_of_clients();
+        if (current_num_of_clients != last_num_of_clients) {
+            buffer = (char *)realloc(buffer, get_buffer_size() * sizeof(char));
+            last_num_of_clients = current_num_of_clients;
+        }
+    }
+
+    if (buffer_offset > 0) {
+        if (fwrite(write_buffer, 1, buffer_offset, file) != buffer_offset) {
+            perror("\nErro ao escrever o restante no arquivo");
+        }
+        total_bytes_written += buffer_offset;
+        show_progress(total_bytes_written, client_file_size, "escritos", file_name, FALSE, get_buffer_size());
+    }
+
+    free(buffer);
+    return total_bytes_written;
 }
 
 void *handle_client(void *client_sockfd_ptr) {
     increase_number_of_clients();
-    struct timeval t1, t2;
-    gettimeofday(&t1, NULL);
     int client_sockfd = *(int *)client_sockfd_ptr;
     free(client_sockfd_ptr);
     struct copy_request request_info;
@@ -46,11 +148,6 @@ void *handle_client(void *client_sockfd_ptr) {
         pthread_exit(NULL);
     }
 
-    printf("request file name: %s\n", request_info.file_path);
-    printf("request file size: %ld\n", request_info.file_size);
-    printf("TIPO: %s\n", request_info.type);
-    printf("BYTES WRITTEN: %ld\n", request_info.bytes_written);
-
     char* file_name = get_file_name_from_path(request_info.file_path);
 
     if (strcmp(request_info.type, CLIENT_SEND) == 0) {
@@ -62,7 +159,7 @@ void *handle_client(void *client_sockfd_ptr) {
         // Envia a quantidade de bytes já escrita para o cliente
         write(client_sockfd, &file_size, sizeof(file_size));
 
-        long total_bytes_write = write_to_file(client_sockfd, file, file_size, request_info.file_size, file_name, FALSE);
+        long total_bytes_write = write_to_file(client_sockfd, file, file_size, request_info.file_size, file_name);
         if (total_bytes_write == request_info.file_size) {
             rename_file(request_info.file_path);
         }
@@ -74,15 +171,10 @@ void *handle_client(void *client_sockfd_ptr) {
         // Envia o tamanho total do arquivo para o cliente
         write(client_sockfd, &file_size, sizeof(file_size));
 
-        printf("TAMANHO ARQUIVO SERVIDOR %ld\n", file_size);
-        send_file(client_sockfd, file, file_size, request_info.bytes_written, file_name, FALSE);
+        send_file(client_sockfd, file, file_size, request_info.bytes_written, file_name);
     }
 
     decrease_number_of_clients();
-
-    gettimeofday(&t2, NULL);
-    double t_total = (t2.tv_sec - t1.tv_sec) + ((t2.tv_usec - t1.tv_usec) / 1000000.0);
-    printf("tempo total = %f\n", t_total);
 
     terminate(client_sockfd, file);
 }

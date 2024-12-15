@@ -7,7 +7,7 @@
 #define PORT 9734
 #define TRUE 1
 #define FALSE 0
-#define MAX_CLIENTS 3
+#define MAX_CLIENTS 1
 
 #define CLIENT_RECEIVE "client_receive"
 #define CLIENT_SEND "client_send"
@@ -29,17 +29,11 @@ struct server_response {
 };
 
 int get_file_size_in_bytes(FILE* file);
-void show_progress(long write, long total, char* action, char* file_name, int is_client);
+void show_progress(long write, long total, char* action, char* file_name, int is_client, int transfer_rate);
 FILE* open_or_create_file(char *file_path, int sockfd);
 FILE* open_file(char *file_path, int sockfd);
-int send_file(int sockfd, FILE* file, long file_size, long remote_file_size, char* file_name, int is_client);
 void terminate(int sockfd, FILE* file);
-long write_to_file(int remote_sockfd, FILE* file, long bytes_written, long client_file_size, char* file_name, int is_client);
 void rename_file(char *file_path);
-void increase_number_of_clients();
-void decrease_number_of_clients();
-int get_number_of_clients();
-int get_buffer_size();
 char* get_file_name_from_path(char* file_path);
 void remove_trailing_slashes(char *str);
 
