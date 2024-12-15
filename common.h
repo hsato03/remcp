@@ -7,7 +7,7 @@
 #define PORT 9734
 #define TRUE 1
 #define FALSE 0
-#define MAX_CLIENTS 1
+#define MAX_CLIENTS 3
 
 #define CLIENT_RECEIVE "client_receive"
 #define CLIENT_SEND "client_send"
