@@ -23,7 +23,6 @@ int get_file_size_in_bytes(FILE *file) {
 }
 
 void show_progress(long write, long total, char* action, char* file_name, int is_client, int transfer_rate) {
-    // TODO: sincronizar barra de progresso com o servidor
     int progress = (int)((double)write / total * 50);
     printf("\r[");
     for (int i = 0; i < 50; i++) {
