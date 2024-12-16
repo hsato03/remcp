@@ -165,7 +165,7 @@ void server_to_client_transfer(char **argv) {
             printf("\nArquivo salvo com sucesso\n");
             return;
         }
-        // retries = 0;
+        retries = 0;
     }
 }
 
